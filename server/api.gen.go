@@ -11,14 +11,28 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// PutDomain defines model for PutDomain.
-type PutDomain struct {
-	Type  *string `json:"type,omitempty"`
+// Defines values for RecordType.
+const (
+	RecordTypeA RecordType = "A"
+
+	RecordTypeCNAME RecordType = "CNAME"
+
+	RecordTypeTXT RecordType = "TXT"
+)
+
+// RecordType defines model for RecordType.
+type RecordType string
+
+// RecordValue defines model for RecordValue.
+type RecordValue struct {
 	Value *string `json:"value,omitempty"`
 }
 
+// Domain defines model for Domain.
+type Domain string
+
 // PutDomainJSONBody defines parameters for PutDomain.
-type PutDomainJSONBody PutDomain
+type PutDomainJSONBody RecordValue
 
 // PutDomainJSONRequestBody defines body for PutDomain for application/json ContentType.
 type PutDomainJSONRequestBody PutDomainJSONBody
@@ -26,8 +40,11 @@ type PutDomainJSONRequestBody PutDomainJSONBody
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 
-	// (PUT /domains/{domain})
-	PutDomain(w http.ResponseWriter, r *http.Request, domain string)
+	// (GET /domains/{domain}/record/{recordType})
+	GetDomain(w http.ResponseWriter, r *http.Request, domain Domain, recordType RecordType)
+
+	// (PUT /domains/{domain}/record/{recordType})
+	PutDomain(w http.ResponseWriter, r *http.Request, domain Domain, recordType RecordType)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -39,14 +56,14 @@ type ServerInterfaceWrapper struct {
 
 type MiddlewareFunc func(http.HandlerFunc) http.HandlerFunc
 
-// PutDomain operation middleware
-func (siw *ServerInterfaceWrapper) PutDomain(w http.ResponseWriter, r *http.Request) {
+// GetDomain operation middleware
+func (siw *ServerInterfaceWrapper) GetDomain(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	var err error
 
 	// ------------- Path parameter "domain" -------------
-	var domain string
+	var domain Domain
 
 	err = runtime.BindStyledParameter("simple", false, "domain", chi.URLParam(r, "domain"), &domain)
 	if err != nil {
@@ -54,8 +71,52 @@ func (siw *ServerInterfaceWrapper) PutDomain(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	// ------------- Path parameter "recordType" -------------
+	var recordType RecordType
+
+	err = runtime.BindStyledParameter("simple", false, "recordType", chi.URLParam(r, "recordType"), &recordType)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "recordType", Err: err})
+		return
+	}
+
 	var handler = func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.PutDomain(w, r, domain)
+		siw.Handler.GetDomain(w, r, domain, recordType)
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler(w, r.WithContext(ctx))
+}
+
+// PutDomain operation middleware
+func (siw *ServerInterfaceWrapper) PutDomain(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var err error
+
+	// ------------- Path parameter "domain" -------------
+	var domain Domain
+
+	err = runtime.BindStyledParameter("simple", false, "domain", chi.URLParam(r, "domain"), &domain)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "domain", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "recordType" -------------
+	var recordType RecordType
+
+	err = runtime.BindStyledParameter("simple", false, "recordType", chi.URLParam(r, "recordType"), &recordType)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "recordType", Err: err})
+		return
+	}
+
+	var handler = func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutDomain(w, r, domain, recordType)
 	}
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -179,7 +240,10 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	}
 
 	r.Group(func(r chi.Router) {
-		r.Put(options.BaseURL+"/domains/{domain}", wrapper.PutDomain)
+		r.Get(options.BaseURL+"/domains/{domain}/record/{recordType}", wrapper.GetDomain)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/domains/{domain}/record/{recordType}", wrapper.PutDomain)
 	})
 
 	return r

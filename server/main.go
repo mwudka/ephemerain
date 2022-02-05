@@ -21,7 +21,7 @@ func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 		m.SetReply(r)
 		m.Compress = false
 
-		dom := r.Question[0].Name
+		dom := Domain(r.Question[0].Name)
 
 		switch r.Question[0].Qtype {
 		default:
@@ -32,7 +32,7 @@ func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 				fmt.Printf("Error getting CNAME record for %s: %v\n", dom, err)
 			} else {
 				rr := &dns.CNAME{
-					Hdr:    dns.RR_Header{Name: dom, Rrtype: dns.TypeCNAME, Class: dns.ClassINET, Ttl: 0},
+					Hdr:    dns.RR_Header{Name: string(dom), Rrtype: dns.TypeCNAME, Class: dns.ClassINET, Ttl: 0},
 					Target: value,
 				}
 				m.Answer = append(m.Answer, rr)
@@ -43,14 +43,14 @@ func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 				fmt.Printf("Error getting CNAME record for %s: %v\n", dom, err)
 			} else {
 				rr := &dns.TXT{
-					Hdr: dns.RR_Header{Name: dom, Rrtype: dns.TypeTXT, Class: dns.ClassINET, Ttl: 0},
+					Hdr: dns.RR_Header{Name: string(dom), Rrtype: dns.TypeTXT, Class: dns.ClassINET, Ttl: 0},
 					Txt: []string{value},
 				}
 				m.Answer = append(m.Answer, rr)
 			}
 		case dns.TypeA:
 			ipv4QueryRegex := regexp.MustCompile(`(?P<ipv4>(?:\d+\D){3}\d+)\.ip\.[^.]+\.[^.]+\.`)
-			submatch := ipv4QueryRegex.FindStringSubmatch(dom)
+			submatch := ipv4QueryRegex.FindStringSubmatch(string(dom))
 			fmt.Printf("Found submatch %v for %s\n", submatch, dom)
 			if len(submatch) == 2 {
 				requestedIPv4 := submatch[1]
@@ -59,7 +59,7 @@ func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 				normalizedIPv4 := strings.Join(regexp.MustCompile(`\D`).Split(requestedIPv4, 4), ".")
 
 				rr := &dns.A{
-					Hdr: dns.RR_Header{Name: dom, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 0},
+					Hdr: dns.RR_Header{Name: string(dom), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 0},
 					A:   net.ParseIP(normalizedIPv4),
 				}
 				m.Answer = append(m.Answer, rr)
@@ -69,7 +69,7 @@ func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 					fmt.Printf("Error getting A record for %s: %v\n", dom, err)
 				} else {
 					rr := &dns.A{
-						Hdr: dns.RR_Header{Name: dom, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 0},
+						Hdr: dns.RR_Header{Name: string(dom), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 0},
 						A:   net.ParseIP(value),
 					}
 					m.Answer = append(m.Answer, rr)
@@ -94,6 +94,9 @@ func serveDNS() {
 
 func serveAPI(registrar Registrar) {
 	r := chi.NewRouter()
+
+	// TODO: Structured logging
+	// TODO: Ratelimiting
 	r.Use(middleware.Logger)
 
 	api := DomainAPIImpl{registrar: registrar}

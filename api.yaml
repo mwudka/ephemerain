@@ -7,38 +7,53 @@ servers:
   - url: 'http://example.com/v1'
 components:
   schemas:
-    PutDomain:
+    RecordType:
+      type: string
+      enum: [A, CNAME, TXT]
+    RecordValue:
       type: object
       properties:
-        type:
-          type: string
         value:
           type: string
+  parameters:
+    Domain:
+      name: domain
+      in: path
+      required: true
+      schema:
+        type: string
+    RecordType:
+      name: recordType
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/RecordType'
 paths:
-  /domains/{domain}:
+  /domains/{domain}/record/{recordType}:
+    get:
+      operationId: getDomain
+      parameters:
+        - $ref: '#/components/parameters/Domain'
+        - $ref: '#/components/parameters/RecordType'
+      responses:
+        '200':
+          description: Get domain record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordValue'
     put:
       operationId: putDomain
       parameters:
-        - name: domain
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/Domain'
+        - $ref: '#/components/parameters/RecordType'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PutDomain'
+              $ref: '#/components/schemas/RecordValue'
       responses:
         '200':
           description: Successfully updated domain records
-        '400':
-          description: Invalid request
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
+

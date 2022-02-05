@@ -3,24 +3,23 @@ package main
 import "errors"
 
 type Registrar interface {
-	SetRecord(fqdn string, recordType string, value string)
-	GetRecord(fqdn string, recordType string) (string, error)
+	SetRecord(fqdn Domain, recordType RecordType, value string)
+	GetRecord(fqdn Domain, recordType RecordType) (string, error)
 }
 
 type InMemoryRegistrar struct {
 	records map[string]string
 }
 
-func (i InMemoryRegistrar) SetRecord(fqdn string, recordType string, value string) {
-	i.records[fqdn+":"+recordType] = value
+func (i InMemoryRegistrar) SetRecord(fqdn Domain, recordType RecordType, value string) {
+	i.records[string(fqdn)+":"+string(recordType)] = value
 }
 
-func (i InMemoryRegistrar) GetRecord(fqdn string, recordType string) (string, error) {
-	if value, present := i.records[fqdn+":"+recordType]; present {
+func (i InMemoryRegistrar) GetRecord(fqdn Domain, recordType RecordType) (string, error) {
+	if value, present := i.records[string(fqdn)+":"+string(recordType)]; present {
 		return value, nil
 	} else {
 		return "", errors.New("Record not present")
 	}
 
 }
-
