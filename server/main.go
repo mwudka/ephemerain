@@ -7,10 +7,12 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"regexp"
+	"strings"
 	"syscall"
 )
 
-func handleQuery(w dns.ResponseWriter, r *dns.Msg) {
+func handleIPQuery(w dns.ResponseWriter, r *dns.Msg) {
 	m := new(dns.Msg)
 	m.SetReply(r)
 	m.Compress = false
@@ -20,18 +22,22 @@ func handleQuery(w dns.ResponseWriter, r *dns.Msg) {
 	switch r.Question[0].Qtype {
 	default:
 		fallthrough
-	case dns.TypeAAAA:
-		rr := &dns.AAAA{
-			Hdr:  dns.RR_Header{Name: dom, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 0},
-			AAAA: net.ParseIP("2606:2800:220:1:248:1893:25c8:1946"),
-		}
-		m.Answer = append(m.Answer, rr)
 	case dns.TypeA:
-		rr := &dns.A{
-			Hdr: dns.RR_Header{Name: dom, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 0},
-			A:   net.ParseIP("93.184.216.34"),
+		ipv4QueryRegex := regexp.MustCompile(`(?P<ipv4>(?:\d+\D){3}\d+)\.ip\.[^.]+\.[^.]+\.`)
+		submatch := ipv4QueryRegex.FindStringSubmatch(dom)
+		fmt.Printf("Found submatch %v for %s\n", submatch, dom)
+		if len(submatch) == 2 {
+			requestedIPv4 := submatch[1]
+			fmt.Printf("Raw requested IPv4 is %s\n", requestedIPv4)
+
+			normalizedIPv4 := strings.Join(regexp.MustCompile(`\D`).Split(requestedIPv4, 4), ".")
+
+			rr := &dns.A{
+				Hdr: dns.RR_Header{Name: dom, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 0},
+				A:   net.ParseIP(normalizedIPv4),
+			}
+			m.Answer = append(m.Answer, rr)
 		}
-		m.Answer = append(m.Answer, rr)
 	}
 
 	fmt.Printf("%v\n", m.String())
@@ -53,7 +59,7 @@ func main() {
 		flag.PrintDefaults()
 	}
 	flag.Parse()
-	dns.HandleFunc(".", handleQuery)
+	dns.HandleFunc(".", handleIPQuery)
 	go serve()
 	sig := make(chan os.Signal)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
