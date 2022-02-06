@@ -89,6 +89,9 @@ func serveDNS() {
 	server := &dns.Server{Addr: "[::]:53", Net: "udp", TsigSecret: nil, ReusePort: false}
 	if err := server.ListenAndServe(); err != nil {
 		fmt.Printf("Failed to setup the dns: %v\n", err.Error())
+		// TODO: What is the right way to handle server startup failure? If DNS fails but HTTP works it might be
+		// nice to at least serve the HTTP component. Maybe this is a signal that they should be different containers?
+		panic(err)
 	}
 }
 
@@ -103,6 +106,9 @@ func serveAPI(registrar Registrar) {
 	r.Mount("/v1", Handler(&api))
 	if err := http.ListenAndServe(":80", r); err != nil {
 		fmt.Printf("Error starting API server: %v\n", err)
+		// TODO: What is the right way to handle server startup failure? If DNS fails but HTTP works it might be
+		// nice to at least serve the HTTP component. Maybe this is a signal that they should be different containers?
+		panic(err)
 	}
 }
 
