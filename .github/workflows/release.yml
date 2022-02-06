@@ -25,4 +25,5 @@ jobs:
           push: true
           build-args: BUILD_INFO=${{github.sha}}
           tags: |
-            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:latest,
+            ghcr.io/${{ github.repository }}:${{ github.run_number }}
