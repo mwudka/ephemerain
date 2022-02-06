@@ -1,5 +1,5 @@
-output "public-ip" {
-  value = local.public-ip
+output "production-ip" {
+  value = local.production-ip
 }
 
 output "ssh-command" {
