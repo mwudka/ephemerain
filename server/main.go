@@ -17,6 +17,40 @@ import (
 
 func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 	return func(w dns.ResponseWriter, r *dns.Msg) {
+		fmt.Printf("Got message %s\n", r)
+
+		// TODO: Probably split it into its own method
+		if r.Opcode == dns.OpcodeUpdate {
+			fmt.Printf("Update request received\n")
+
+
+			ns := r.Ns[0]
+			fqdn := Domain(ns.Header().Name)
+			switch ns.Header().Rrtype {
+			case dns.TypeA:
+				ip := ns.(*dns.A).A.String()
+				registrar.SetRecord(fqdn, RecordTypeA, ip)
+			case dns.TypeCNAME:
+				target := ns.(*dns.CNAME).Target
+				registrar.SetRecord(fqdn, RecordTypeCNAME, target)
+			case dns.TypeTXT:
+				// TODO: Support multiple values
+				// TODO: Handle deletion
+				txt := ns.(*dns.TXT).Txt
+				if len(txt) > 0 {
+					values := txt[0]
+					registrar.SetRecord(fqdn, RecordTypeTXT, values)
+				}
+			}
+
+			// TODO: What is the return message supposed to say?
+			m := new(dns.Msg)
+			m.SetReply(r)
+			m.Compress = false
+			w.WriteMsg(m)
+			return
+		}
+
 		m := new(dns.Msg)
 		m.SetReply(r)
 		m.Compress = false
@@ -24,8 +58,6 @@ func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 		dom := Domain(r.Question[0].Name)
 
 		switch r.Question[0].Qtype {
-		default:
-			fallthrough
 		case dns.TypeCNAME:
 			value, err := registrar.GetRecord(dom, "CNAME")
 			if err != nil {
@@ -59,7 +91,7 @@ func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 				normalizedIPv4 := strings.Join(regexp.MustCompile(`\D`).Split(requestedIPv4, 4), ".")
 
 				rr := &dns.A{
-					Hdr: dns.RR_Header{Name: string(dom), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 0},
+					Hdr: dns.RR_Header{Name: string(dom), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60},
 					A:   net.ParseIP(normalizedIPv4),
 				}
 				m.Answer = append(m.Answer, rr)
@@ -69,7 +101,7 @@ func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 					fmt.Printf("Error getting A record for %s: %v\n", dom, err)
 				} else {
 					rr := &dns.A{
-						Hdr: dns.RR_Header{Name: string(dom), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 0},
+						Hdr: dns.RR_Header{Name: string(dom), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60},
 						A:   net.ParseIP(value),
 					}
 					m.Answer = append(m.Answer, rr)
@@ -86,7 +118,30 @@ func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 }
 
 func serveDNS() {
-	server := &dns.Server{Addr: "[::]:53", Net: "udp", TsigSecret: nil, ReusePort: false}
+	// Same as the default accept function, but allows update messages
+	acceptFunc := func(dh dns.Header) dns.MsgAcceptAction {
+		if isResponse := dh.Bits&/*dns._QR*/(1 << 15) != 0; isResponse {
+			return dns.MsgIgnore
+		}
+
+		opcode := int(dh.Bits>>11) & 0xF
+		if opcode != dns.OpcodeQuery && opcode != dns.OpcodeNotify && opcode != dns.OpcodeUpdate {
+			return dns.MsgRejectNotImplemented
+		}
+
+		if dh.Qdcount != 1 {
+			return dns.MsgReject
+		}
+		// NOTIFY requests can have a SOA in the ANSWER section. See RFC 1996 Section 3.7 and 3.11.
+		if dh.Ancount > 1 {
+			return dns.MsgReject
+		}
+		if dh.Arcount > 2 {
+			return dns.MsgReject
+		}
+		return dns.MsgAccept
+	}
+	server := &dns.Server{Addr: "[::]:53", Net: "udp", TsigSecret: nil, ReusePort: false, MsgAcceptFunc: acceptFunc}
 	if err := server.ListenAndServe(); err != nil {
 		fmt.Printf("Failed to setup the dns: %v\n", err.Error())
 		// TODO: What is the right way to handle server startup failure? If DNS fails but HTTP works it might be
