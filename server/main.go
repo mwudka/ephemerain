@@ -60,6 +60,15 @@ func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 		dom := Domain(r.Question[0].Name)
 
 		switch r.Question[0].Qtype {
+		case dns.TypeNS:
+			// TODO: Should this, like, recurse or something? Letsencrypt always checks for NS records on random
+			// subdomains
+			m.Rcode = dns.RcodeSuccess
+			rr := &dns.NS{
+				Hdr: dns.RR_Header{Name: string(dom), Rrtype: dns.TypeNS, Class: dns.ClassINET, Ttl: 60},
+				Ns:  "ns1.ephemerain.com.",
+			}
+			m.Answer = append(m.Answer, rr)
 		case dns.TypeSOA:
 			m.Rcode = dns.RcodeSuccess
 			// TODO: What are these supposed to be?
@@ -73,11 +82,6 @@ func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 				Expire:  1209600,
 				Minttl:  86400,
 			}
-			//ns := &dns.NS{
-			//	Hdr: dns.RR_Header{Name: string(dom), Rrtype: dns.TypeOPT, Class: dns.ClassINET, Ttl: 60},
-			//	Ns:  "the.ns.com.",
-			//}
-			//m.Ns = append(m.Ns, ns)
 			m.Answer = append(m.Answer, rr)
 		case dns.TypeCNAME:
 			value, err := registrar.GetRecord(dom, "CNAME")
