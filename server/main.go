@@ -23,7 +23,6 @@ func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 		if r.Opcode == dns.OpcodeUpdate {
 			fmt.Printf("Update request received\n")
 
-
 			ns := r.Ns[0]
 			fqdn := Domain(ns.Header().Name)
 			switch ns.Header().Rrtype {
@@ -64,7 +63,7 @@ func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 				fmt.Printf("Error getting CNAME record for %s: %v\n", dom, err)
 			} else {
 				rr := &dns.CNAME{
-					Hdr:    dns.RR_Header{Name: string(dom), Rrtype: dns.TypeCNAME, Class: dns.ClassINET, Ttl: 0},
+					Hdr:    dns.RR_Header{Name: string(dom), Rrtype: dns.TypeCNAME, Class: dns.ClassINET, Ttl: 60},
 					Target: value,
 				}
 				m.Answer = append(m.Answer, rr)
@@ -75,7 +74,7 @@ func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 				fmt.Printf("Error getting CNAME record for %s: %v\n", dom, err)
 			} else {
 				rr := &dns.TXT{
-					Hdr: dns.RR_Header{Name: string(dom), Rrtype: dns.TypeTXT, Class: dns.ClassINET, Ttl: 0},
+					Hdr: dns.RR_Header{Name: string(dom), Rrtype: dns.TypeTXT, Class: dns.ClassINET, Ttl: 60},
 					Txt: []string{value},
 				}
 				m.Answer = append(m.Answer, rr)
