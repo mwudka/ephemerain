@@ -98,6 +98,21 @@ func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 			value, err := registrar.GetRecord(dom, "TXT")
 			if err != nil {
 				fmt.Printf("Error getting TXT record for %s: %v\n", dom, err)
+
+				// TODO: This seems really weird. Is it correct to fallback to CNAME if TXT isn't present?
+				// registry.terraform.io seems to do it and AWS ACM validation queries TXT records even though
+				// it says to create CNAME records, so maybe???
+				// TODO: Cleanup duplication
+				value, err := registrar.GetRecord(dom, "CNAME")
+				if err != nil {
+					fmt.Printf("Error getting CNAME record for %s: %v\n", dom, err)
+				} else {
+					rr := &dns.CNAME{
+						Hdr:    dns.RR_Header{Name: string(dom), Rrtype: dns.TypeCNAME, Class: dns.ClassINET, Ttl: 60},
+						Target: value,
+					}
+					m.Answer = append(m.Answer, rr)
+				}
 			} else {
 				rr := &dns.TXT{
 					Hdr: dns.RR_Header{Name: string(dom), Rrtype: dns.TypeTXT, Class: dns.ClassINET, Ttl: 60},
