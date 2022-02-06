@@ -127,6 +127,25 @@ resource "google_project_iam_member" "metric-writer" {
   role = "roles/monitoring.metricWriter"
   member = "serviceAccount:${data.google_compute_default_service_account.default.email}"
 }
+
+provider "aws" {
+  region = "us-west-2"
+}
+
+data "aws_route53_zone" "ephemerain" {
+  name         = "ephemerain.com."
+}
+
+// TODO: This sets up a circular dependency. Need to create another domain name for the API and NS records on ephemerain.com
+resource "aws_route53_record" "ns" {
+  count = 4
+  zone_id = data.aws_route53_zone.ephemerain.zone_id
+  name = "ns${count.index+1}.ephemerain.com"
+  type = "A"
+  ttl = "60"
+  records = [local.production-ip]
+}
+
 locals {
   ssh-command = "gcloud compute ssh --zone '${var.zone}' '${google_compute_instance.production.name}'  --project '${var.gcp-project}'"
   production-ip  = google_compute_instance.production.network_interface[0].access_config[0].nat_ip
