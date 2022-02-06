@@ -4,8 +4,6 @@ on:
   workflow_dispatch:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
 
 jobs:
   build:
@@ -27,3 +25,17 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}:latest,
             ghcr.io/${{ github.repository }}:${{ github.run_number }}
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v1
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+      - name: Terraform Init
+        id: init
+        working-directory: ./terraform
+        run: terraform init
+      - name: Terraform Select Workspace
+        working-directory: ./terraform
+        run: terraform workspace select ephemerain-dev
+      - name: Terraform Apply
+        working-directory: ./terraform
+        run: terraform apply -auto-approve -var ephemerain-server-container="ghcr.io/${{ github.repository }}:${{ github.run_number }}" -replace=google_compute_instance.production
