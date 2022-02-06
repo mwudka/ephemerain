@@ -37,7 +37,7 @@ module "container-vm" {
   version = "3.0.0"
   
   container = {
-    image="ghcr.io/mwudka/ephemerain:latest"
+    image=var.ephemerain-server-container
   }
 }
 
