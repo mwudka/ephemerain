@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 type Registrar interface {
@@ -16,11 +17,11 @@ type InMemoryRegistrar struct {
 
 func (i InMemoryRegistrar) SetRecord(fqdn Domain, recordType RecordType, value string) {
 	fmt.Printf("Setting <%s> %s -> %s\n", fqdn, recordType, value)
-	i.records[string(fqdn)+":"+string(recordType)] = value
+	i.records[strings.ToLower(string(fqdn))+":"+string(recordType)] = value
 }
 
 func (i InMemoryRegistrar) GetRecord(fqdn Domain, recordType RecordType) (string, error) {
-	if value, present := i.records[string(fqdn)+":"+string(recordType)]; present {
+	if value, present := i.records[strings.ToLower(string(fqdn))+":"+string(recordType)]; present {
 		return value, nil
 	} else {
 		return "", errors.New("Record not present")
