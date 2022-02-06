@@ -17,28 +17,29 @@ import (
 
 func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 	return func(w dns.ResponseWriter, r *dns.Msg) {
-		fmt.Printf("Got message %s\n", r)
+		fmt.Printf("Got message:\n%s\n", r)
 
 		// TODO: Probably split it into its own method
 		if r.Opcode == dns.OpcodeUpdate {
 			fmt.Printf("Update request received\n")
 
-			ns := r.Ns[0]
-			fqdn := Domain(ns.Header().Name)
-			switch ns.Header().Rrtype {
-			case dns.TypeA:
-				ip := ns.(*dns.A).A.String()
-				registrar.SetRecord(fqdn, RecordTypeA, ip)
-			case dns.TypeCNAME:
-				target := ns.(*dns.CNAME).Target
-				registrar.SetRecord(fqdn, RecordTypeCNAME, target)
-			case dns.TypeTXT:
-				// TODO: Support multiple values
-				// TODO: Handle deletion
-				txt := ns.(*dns.TXT).Txt
-				if len(txt) > 0 {
-					values := txt[0]
-					registrar.SetRecord(fqdn, RecordTypeTXT, values)
+			for _, ns := range r.Ns {
+				fqdn := Domain(ns.Header().Name)
+				switch ns.Header().Rrtype {
+				case dns.TypeA:
+					ip := ns.(*dns.A).A.String()
+					registrar.SetRecord(fqdn, RecordTypeA, ip)
+				case dns.TypeCNAME:
+					target := ns.(*dns.CNAME).Target
+					registrar.SetRecord(fqdn, RecordTypeCNAME, target)
+				case dns.TypeTXT:
+					// TODO: Support multiple values
+					// TODO: Handle deletion
+					txt := ns.(*dns.TXT).Txt
+					if len(txt) > 0 {
+						values := txt[0]
+						registrar.SetRecord(fqdn, RecordTypeTXT, values)
+					}
 				}
 			}
 
@@ -53,10 +54,31 @@ func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 		m := new(dns.Msg)
 		m.SetReply(r)
 		m.Compress = false
+		m.Authoritative = true
+		m.RecursionAvailable = false
 
 		dom := Domain(r.Question[0].Name)
 
 		switch r.Question[0].Qtype {
+		case dns.TypeSOA:
+			m.Rcode = dns.RcodeSuccess
+			// TODO: What are these supposed to be?
+			rr := &dns.SOA{
+				Hdr:     dns.RR_Header{Name: string(dom), Rrtype: dns.TypeSOA, Class: dns.ClassINET, Ttl: 60},
+				Ns:      "ns-822.awsdns-38.net.",
+				Mbox:    "awsdns-hostmaster.amazon.com.",
+				Serial:  1,
+				Refresh: 7200,
+				Retry:   900,
+				Expire:  1209600,
+				Minttl:  86400,
+			}
+			//ns := &dns.NS{
+			//	Hdr: dns.RR_Header{Name: string(dom), Rrtype: dns.TypeOPT, Class: dns.ClassINET, Ttl: 60},
+			//	Ns:  "the.ns.com.",
+			//}
+			//m.Ns = append(m.Ns, ns)
+			m.Answer = append(m.Answer, rr)
 		case dns.TypeCNAME:
 			value, err := registrar.GetRecord(dom, "CNAME")
 			if err != nil {
@@ -71,7 +93,7 @@ func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 		case dns.TypeTXT:
 			value, err := registrar.GetRecord(dom, "TXT")
 			if err != nil {
-				fmt.Printf("Error getting CNAME record for %s: %v\n", dom, err)
+				fmt.Printf("Error getting TXT record for %s: %v\n", dom, err)
 			} else {
 				rr := &dns.TXT{
 					Hdr: dns.RR_Header{Name: string(dom), Rrtype: dns.TypeTXT, Class: dns.ClassINET, Ttl: 60},

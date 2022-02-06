@@ -1,6 +1,9 @@
 package main
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 type Registrar interface {
 	SetRecord(fqdn Domain, recordType RecordType, value string)
@@ -12,6 +15,7 @@ type InMemoryRegistrar struct {
 }
 
 func (i InMemoryRegistrar) SetRecord(fqdn Domain, recordType RecordType, value string) {
+	fmt.Printf("Setting <%s> %s -> %s\n", fqdn, recordType, value)
 	i.records[string(fqdn)+":"+string(recordType)] = value
 }
 
@@ -21,5 +25,4 @@ func (i InMemoryRegistrar) GetRecord(fqdn Domain, recordType RecordType) (string
 	} else {
 		return "", errors.New("Record not present")
 	}
-
 }

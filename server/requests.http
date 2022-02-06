@@ -1,0 +1,15 @@
+PUT http://104.198.145.69/v1/domains/_347cec3a8ff0312232cbb888e11184c9.another.ephemerain.com./record/CNAME
+
+{"value": "_b60ea3c57e830e30ce4da86ca651358d.ykybfrwcxw.acm-validations.aws."}
+
+####
+
+PUT http://104.198.145.69/v1/domains/_5636488bd7146ad7e283f42177aed42f.testorino.ephemerain.com./record/CNAME
+
+{"value": "_02fb76dc4f01f01957530c8636a2c68e.ykybfrwcxw.acm-validations.aws."}
+
+####
+
+PUT http://104.198.145.69/v1/domains/_c79a25696e72ca899445309615dd58ce.moretest.ephemerain.com./record/CNAME
+
+{"value": "_cd142637c019773238ac618fef0c8d96.ykybfrwcxw.acm-validations.aws."}
