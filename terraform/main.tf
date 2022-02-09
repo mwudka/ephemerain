@@ -38,6 +38,12 @@ module "container-vm" {
   
   container = {
     image=var.ephemerain-server-container
+    env = [
+      {
+        name = "REDIS_ADDRESS"
+        value = "${google_redis_instance.storage.host}:${google_redis_instance.storage.port}"
+      }
+    ]
   }
 }
 
@@ -70,6 +76,15 @@ module "public-ipaddress" {
   names  = [ "external-facing-ip"]
 }
 
+
+resource "google_redis_instance" "storage" {
+  name           = "ephemerain-storage"
+  memory_size_gb = 1
+
+  authorized_network = google_compute_network.network.self_link
+  location_id = var.zone
+}
+
 resource "google_compute_instance" "production" {
   name         = "ephemerain-production"
   machine_type = var.instance-type
@@ -85,7 +100,6 @@ resource "google_compute_instance" "production" {
       nat_ip = module.public-ipaddress.addresses[0]
     }
   }
-
   boot_disk {
     initialize_params {
       image = module.container-vm.source_image
