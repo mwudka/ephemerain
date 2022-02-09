@@ -6,6 +6,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/miekg/dns"
+	"golang.org/x/net/context"
 	"net"
 	"net/http"
 	"os"
@@ -28,17 +29,17 @@ func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 				switch ns.Header().Rrtype {
 				case dns.TypeA:
 					ip := ns.(*dns.A).A.String()
-					registrar.SetRecord(fqdn, RecordTypeA, ip)
+					registrar.SetRecord(context.TODO(), fqdn, RecordTypeA, ip)
 				case dns.TypeCNAME:
 					target := ns.(*dns.CNAME).Target
-					registrar.SetRecord(fqdn, RecordTypeCNAME, target)
+					registrar.SetRecord(context.TODO(), fqdn, RecordTypeCNAME, target)
 				case dns.TypeTXT:
 					// TODO: Support multiple values
 					// TODO: Handle deletion
 					txt := ns.(*dns.TXT).Txt
 					if len(txt) > 0 {
 						values := txt[0]
-						registrar.SetRecord(fqdn, RecordTypeTXT, values)
+						registrar.SetRecord(context.TODO(), fqdn, RecordTypeTXT, values)
 					}
 				}
 			}
@@ -84,7 +85,7 @@ func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 			}
 			m.Answer = append(m.Answer, rr)
 		case dns.TypeCNAME:
-			value, err := registrar.GetRecord(dom, "CNAME")
+			value, err := registrar.GetRecord(context.TODO(), dom, "CNAME")
 			if err != nil {
 				fmt.Printf("Error getting CNAME record for %s: %v\n", dom, err)
 			} else {
@@ -95,7 +96,7 @@ func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 				m.Answer = append(m.Answer, rr)
 			}
 		case dns.TypeTXT:
-			value, err := registrar.GetRecord(dom, "TXT")
+			value, err := registrar.GetRecord(context.TODO(), dom, "TXT")
 			if err != nil {
 				fmt.Printf("Error getting TXT record for %s: %v\n", dom, err)
 
@@ -103,7 +104,7 @@ func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 				// registry.terraform.io seems to do it and AWS ACM validation queries TXT records even though
 				// it says to create CNAME records, so maybe???
 				// TODO: Cleanup duplication
-				value, err := registrar.GetRecord(dom, "CNAME")
+				value, err := registrar.GetRecord(context.TODO(), dom, "CNAME")
 				if err != nil {
 					fmt.Printf("Error getting CNAME record for %s: %v\n", dom, err)
 				} else {
@@ -136,7 +137,7 @@ func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 				}
 				m.Answer = append(m.Answer, rr)
 			} else {
-				value, err := registrar.GetRecord(dom, "A")
+				value, err := registrar.GetRecord(context.TODO(), dom, "A")
 				if err != nil {
 					fmt.Printf("Error getting A record for %s: %v\n", dom, err)
 				} else {
@@ -213,9 +214,13 @@ func main() {
 	}
 	flag.Parse()
 
-	registrar := InMemoryRegistrar{
-		records: map[string]string{},
+	redisAddress, redisAddressSet := os.LookupEnv("REDIS_ADDRESS")
+	if !redisAddressSet {
+		redisAddress = "localhost:6379"
+		fmt.Printf("Using default redis address %s\n", redisAddress)
 	}
+
+	registrar := NewRedisRegistrar(redisAddress)
 
 	dns.HandleFunc(".", handleIPQuery(registrar))
 	go serveDNS()

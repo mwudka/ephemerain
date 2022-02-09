@@ -11,7 +11,7 @@ type DomainAPIImpl struct {
 }
 
 func (d DomainAPIImpl) GetDomain(w http.ResponseWriter, r *http.Request, domain Domain, recordType RecordType) {
-	record, err := d.registrar.GetRecord(domain, recordType)
+	record, err := d.registrar.GetRecord(r.Context(), domain, recordType)
 	if err != nil {
 		fmt.Printf("Error getting record %v\n", err)
 		w.WriteHeader(404)
@@ -36,7 +36,7 @@ func (d DomainAPIImpl) PutDomain(w http.ResponseWriter, r *http.Request, domain 
 	// TODO: Validate lengths
 
 	fmt.Printf("%s %s\n", recordType, *body.Value)
-	d.registrar.SetRecord(domain, recordType, *body.Value)
+	d.registrar.SetRecord(r.Context(), domain, recordType, *body.Value)
 
 	w.WriteHeader(204)
 }
