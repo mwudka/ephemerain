@@ -2,7 +2,7 @@ package main
 
 import (
 	"errors"
-	"fmt"
+	"github.com/hashicorp/go-hclog"
 	"golang.org/x/net/context"
 	"strings"
 )
@@ -16,8 +16,9 @@ type InMemoryRegistrar struct {
 	records map[string]string
 }
 
-func (i InMemoryRegistrar) SetRecord(_ context.Context, fqdn Domain, recordType RecordType, value string) {
-	fmt.Printf("Setting <%s> %s -> %s\n", fqdn, recordType, value)
+func (i InMemoryRegistrar) SetRecord(ctx context.Context, fqdn Domain, recordType RecordType, value string) {
+	// TODO: Move to a logging middleware after registrar middlewares exist
+	hclog.FromContext(ctx).Named("mem_registrar").Trace("Setting key", "fqdn", fqdn, "type", recordType, "value", value)
 	i.records[strings.ToLower(string(fqdn))+":"+string(recordType)] = value
 }
 
