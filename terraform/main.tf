@@ -42,6 +42,10 @@ module "container-vm" {
       {
         name = "REDIS_ADDRESS"
         value = "${google_redis_instance.storage.host}:${google_redis_instance.storage.port}"
+      },
+      {
+        name = "LOG_FORMAT"
+        value = "json"
       }
     ]
   }
