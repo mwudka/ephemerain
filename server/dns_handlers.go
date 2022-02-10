@@ -19,31 +19,39 @@ func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 		if r.Opcode == dns.OpcodeUpdate {
 			logger.Info("Performing update")
 
+			var err error = nil
 			for _, ns := range r.Ns {
 				fqdn := Domain(ns.Header().Name)
 				switch ns.Header().Rrtype {
 				case dns.TypeA:
 					ip := ns.(*dns.A).A.String()
-					registrar.SetRecord(ctx, fqdn, RecordTypeA, ip)
+					err = registrar.SetRecord(ctx, fqdn, RecordTypeA, ip)
 				case dns.TypeCNAME:
 					target := ns.(*dns.CNAME).Target
-					registrar.SetRecord(ctx, fqdn, RecordTypeCNAME, target)
+					err = registrar.SetRecord(ctx, fqdn, RecordTypeCNAME, target)
 				case dns.TypeTXT:
 					// TODO: Support multiple values
 					// TODO: Handle deletion
 					txt := ns.(*dns.TXT).Txt
 					if len(txt) > 0 {
 						values := txt[0]
-						registrar.SetRecord(ctx, fqdn, RecordTypeTXT, values)
+						err = registrar.SetRecord(ctx, fqdn, RecordTypeTXT, values)
 					}
 				}
 			}
 
 			// TODO: What is the return message supposed to say?
 			m := new(dns.Msg)
+			if err != nil {
+				m.Rcode = dns.RcodeServerFailure
+			}
 			m.SetReply(r)
 			m.Compress = false
-			w.WriteMsg(m)
+			logger.Info("Sending response message", "message", m.String())
+			if err := w.WriteMsg(m); err != nil {
+				logger.Error("Error sending response message", "error", err)
+			}
+
 			return
 		}
 
@@ -83,7 +91,9 @@ func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 			value, err := registrar.GetRecord(ctx, dom, "CNAME")
 			if err != nil {
 				logger.Error("Error getting CNAME record", "fqdn", dom, "error", err)
+				m.Rcode = dns.RcodeNameError
 			} else {
+				m.Rcode = dns.RcodeSuccess
 				rr := &dns.CNAME{
 					Hdr:    dns.RR_Header{Name: string(dom), Rrtype: dns.TypeCNAME, Class: dns.ClassINET, Ttl: 60},
 					Target: value,
@@ -102,7 +112,9 @@ func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 				value, err := registrar.GetRecord(ctx, dom, "CNAME")
 				if err != nil {
 					logger.Error("Error getting CNAME record", "fqdn", dom, "error", err)
+					m.Rcode = dns.RcodeNameError
 				} else {
+					m.Rcode = dns.RcodeSuccess
 					rr := &dns.CNAME{
 						Hdr:    dns.RR_Header{Name: string(dom), Rrtype: dns.TypeCNAME, Class: dns.ClassINET, Ttl: 60},
 						Target: value,
@@ -110,6 +122,7 @@ func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 					m.Answer = append(m.Answer, rr)
 				}
 			} else {
+				m.Rcode = dns.RcodeSuccess
 				rr := &dns.TXT{
 					Hdr: dns.RR_Header{Name: string(dom), Rrtype: dns.TypeTXT, Class: dns.ClassINET, Ttl: 60},
 					Txt: []string{value},
@@ -124,6 +137,7 @@ func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 
 				normalizedIPv4 := strings.Join(regexp.MustCompile(`\D`).Split(requestedIPv4, 4), ".")
 
+				m.Rcode = dns.RcodeSuccess
 				rr := &dns.A{
 					Hdr: dns.RR_Header{Name: string(dom), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60},
 					A:   net.ParseIP(normalizedIPv4),
@@ -133,7 +147,9 @@ func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 				value, err := registrar.GetRecord(ctx, dom, "A")
 				if err != nil {
 					logger.Error("Error getting A record", "fqdn", dom, "error", err)
+					m.Rcode = dns.RcodeNameError
 				} else {
+					m.Rcode = dns.RcodeSuccess
 					rr := &dns.A{
 						Hdr: dns.RR_Header{Name: string(dom), Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60},
 						A:   net.ParseIP(value),
