@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-func serveDNS() {
+func serveDNS() error {
 	// Same as the default accept function, but allows update messages
 	acceptFunc := func(dh dns.Header) dns.MsgAcceptAction {
 		if isResponse := dh.Bits& /*dns._QR*/ (1<<15) != 0; isResponse {
@@ -41,15 +41,10 @@ func serveDNS() {
 		return dns.MsgAccept
 	}
 	server := &dns.Server{Addr: "[::]:53", Net: "udp", TsigSecret: nil, ReusePort: false, MsgAcceptFunc: acceptFunc}
-	if err := server.ListenAndServe(); err != nil {
-		hclog.L().Error("Failed to start DNS server", "error", err.Error())
-		// TODO: What is the right way to handle server startup failure? If DNS fails but HTTP works it might be
-		// nice to at least serve the HTTP component. Maybe this is a signal that they should be different containers?
-		panic(err)
-	}
+	return server.ListenAndServe()
 }
 
-func serveAPI(registrar Registrar) {
+func serveAPI(registrar Registrar) error {
 	r := chi.NewRouter()
 
 	// TODO: Ratelimiting
@@ -71,12 +66,7 @@ func serveAPI(registrar Registrar) {
 
 	api := DomainAPIImpl{registrar: registrar}
 	r.Mount("/v1", Handler(&api))
-	if err := http.ListenAndServe(":80", r); err != nil {
-		hclog.L().Error("Error starting API server", "error", err)
-		// TODO: What is the right way to handle server startup failure? If DNS fails but HTTP works it might be
-		// nice to at least serve the HTTP component. Maybe this is a signal that they should be different containers?
-		panic(err)
-	}
+	return http.ListenAndServe(":80", r)
 }
 
 func main() {
@@ -96,8 +86,20 @@ func main() {
 	registrar := NewRedisRegistrar(redisAddress)
 
 	dns.HandleFunc(".", handleIPQuery(registrar))
-	go serveDNS()
-	go serveAPI(registrar)
+	go func() {
+		err := serveDNS()
+		if err != nil {
+			hclog.L().Error("Error starting DNS server", "error", err)
+			panic(err)
+		}
+	}()
+	go func() {
+		err := serveAPI(registrar)
+		if err != nil {
+			hclog.L().Error("Error starting API server", "error", err)
+			panic(err)
+		}
+	}()
 	sig := make(chan os.Signal)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	s := <-sig
