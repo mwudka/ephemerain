@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/docker/go-connections/nat"
 	"net"
 	"net/http"
@@ -22,6 +25,28 @@ func withRedisTestServer(ctx context.Context, callback func(int)) error {
 	}
 	defer client.Close()
 
+	image := "redis:6.2-alpine"
+	pull, err := client.ImagePull(ctx, image, types.ImagePullOptions{})
+	if err != nil {
+		return err
+	}
+	scanner := bufio.NewScanner(pull)
+	defer pull.Close()
+	for scanner.Scan() {
+		if scanner.Err() != nil {
+			return err
+		}
+		var message jsonmessage.JSONMessage
+		if err := json.Unmarshal(scanner.Bytes(), &message); err != nil {
+			return err
+		}
+		fmt.Print(message.Status)
+		if message.ID != "" {
+			fmt.Print(message.ID)
+		}
+		fmt.Println()
+	}
+
 	_, m, _ := nat.ParsePortSpecs([]string{"0:6379"})
 	create, err := client.ContainerCreate(context.Background(), &container.Config{
 		AttachStdin:  true,
@@ -29,7 +54,7 @@ func withRedisTestServer(ctx context.Context, callback func(int)) error {
 		AttachStderr: true,
 		Tty:          true,
 		OpenStdin:    true,
-		Image:        "redis:6.2-alpine",
+		Image:        image,
 	}, &container.HostConfig{
 		PortBindings: m,
 		AutoRemove:   true,
@@ -103,7 +128,7 @@ func withServer(ctx context.Context, config EphemerainConfig, callback func(clie
 	return nil
 }
 
-func runIntegrationTest(t* testing.T, callback func(context.Context, *Client, *net.Resolver)) {
+func runIntegrationTest(t *testing.T, callback func(context.Context, *Client, *net.Resolver)) {
 	ctx := context.Background()
 	err := withRedisTestServer(ctx, func(redisPort int) {
 		config := EphemerainConfig{
