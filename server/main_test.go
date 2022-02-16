@@ -105,8 +105,8 @@ func TestRFC2136(t *testing.T) {
 		assert.NoError(t, err)
 
 		txt, err = resolver.LookupTXT(ctx, record)
-		assert.NoError(t, err)
-		// TODO: Re-add this assert once deleting records is implemented
-		//assert.Empty(t, txt)
+		assert.Error(t, err, "Domain name should have been deleted")
+		assert.True(t, err.(*net.DNSError).IsNotFound)
+		assert.Empty(t, txt)
 	})
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/go-redis/redis/v8"
 	context2 "golang.org/x/net/context"
@@ -25,6 +26,20 @@ func (r RedisRegistrar) GetRecord(ctx context.Context, fqdn Domain, recordType R
 	key := redisKey(fqdn, recordType)
 	status := r.client.Get(ctx, key)
 	return status.Val(), status.Err()
+}
+
+func (r RedisRegistrar) DeleteRecord(ctx context.Context, fqdn Domain, recordType RecordType, currentValue string) error {
+	// TODO: This is racy, because there could be a write between the get and delete. To fix this,
+	// probably need to implement a lua method that atomically deletes if value matches
+	key := redisKey(fqdn, recordType)
+	status := r.client.Get(ctx, key)
+	if status.Err() != nil {
+		return status.Err()
+	}
+	if status.Val() != currentValue {
+		return errors.New("attempted to delete record but supplied wrong current value")
+	}
+	return r.client.Del(ctx, key).Err()
 }
 
 func NewRedisRegistrar(redisAddress string) Registrar {
