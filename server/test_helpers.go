@@ -89,7 +89,7 @@ func withRedisTestServer(ctx context.Context, callback func(int)) error {
 	return nil
 }
 
-func withServer(ctx context.Context, config EphemerainConfig, callback func(client *Client, resolver *net.Resolver)) error {
+func withServer(ctx context.Context, config EphemerainConfig, callback func(client *Client, resolver *net.Resolver, nameserver string)) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -109,11 +109,12 @@ func withServer(ctx context.Context, config EphemerainConfig, callback func(clie
 
 	runServer(ctx, config)
 
+	nameserver := fmt.Sprintf("127.0.0.1:%d", dnsServerPort)
 	resolver := &net.Resolver{
 		PreferGo: true,
 		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
 			dialer := net.Dialer{}
-			return dialer.DialContext(ctx, network, fmt.Sprintf("127.0.0.1:%d", dnsServerPort))
+			return dialer.DialContext(ctx, network, nameserver)
 		},
 	}
 
@@ -122,20 +123,20 @@ func withServer(ctx context.Context, config EphemerainConfig, callback func(clie
 		return err
 	}
 
-	callback(apiClient, resolver)
+	callback(apiClient, resolver, nameserver)
 
 	return nil
 }
 
-func runIntegrationTest(t *testing.T, callback func(context.Context, *Client, *net.Resolver)) {
+func runIntegrationTest(t *testing.T, callback func(context.Context, *Client, *net.Resolver, string)) {
 	ctx := context.Background()
 	err := withRedisTestServer(ctx, func(redisPort int) {
 		config := EphemerainConfig{
 			JSONLogs:     false,
 			RedisAddress: fmt.Sprintf("localhost:%d", redisPort),
 		}
-		err := withServer(ctx, config, func(apiClient *Client, resolver *net.Resolver) {
-			callback(ctx, apiClient, resolver)
+		err := withServer(ctx, config, func(apiClient *Client, resolver *net.Resolver, nameserver string) {
+			callback(ctx, apiClient, resolver, nameserver)
 		})
 		if err != nil {
 			t.Fatalf("Error running test server: %v", err)
