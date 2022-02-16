@@ -64,6 +64,8 @@ func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 		dom := Domain(r.Question[0].Name)
 
 		switch r.Question[0].Qtype {
+		default:
+			m.Rcode = dns.RcodeNameError
 		case dns.TypeNS:
 			// TODO: Should this, like, recurse or something? Letsencrypt always checks for NS records on random
 			// subdomains
