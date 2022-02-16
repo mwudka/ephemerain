@@ -1,172 +1,83 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
-	"fmt"
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/client"
-	"github.com/docker/docker/pkg/jsonmessage"
-	"github.com/docker/go-connections/nat"
+	"github.com/stretchr/testify/assert"
+	"io"
 	"net"
 	"net/http"
-	"strconv"
+	"strings"
 	"testing"
-	"time"
 )
 
-func withRedisTestServer(ctx context.Context, callback func(int)) error {
-	client, err := client.NewClientWithOpts(client.FromEnv)
-	if err != nil {
-		return err
-	}
-	defer client.Close()
-
-	image := "redis:6.2-alpine"
-	pull, err := client.ImagePull(ctx, image, types.ImagePullOptions{})
-	if err != nil {
-		return err
-	}
-	scanner := bufio.NewScanner(pull)
-	defer pull.Close()
-	for scanner.Scan() {
-		if scanner.Err() != nil {
-			return err
-		}
-		var message jsonmessage.JSONMessage
-		if err := json.Unmarshal(scanner.Bytes(), &message); err != nil {
-			return err
-		}
-		fmt.Print(message.Status)
-		if message.ID != "" {
-			fmt.Print(message.ID)
-		}
-		fmt.Println()
-	}
-
-	_, m, _ := nat.ParsePortSpecs([]string{"0:6379"})
-	create, err := client.ContainerCreate(context.Background(), &container.Config{
-		AttachStdin:  true,
-		AttachStdout: true,
-		AttachStderr: true,
-		Tty:          true,
-		OpenStdin:    true,
-		Image:        image,
-	}, &container.HostConfig{
-		PortBindings: m,
-		AutoRemove:   true,
-	}, &network.NetworkingConfig{}, nil, "testing")
-	if err != nil {
-		return err
-	}
-
-	err = client.ContainerStart(ctx, create.ID, types.ContainerStartOptions{})
-	if err != nil {
-		return err
-	}
-
-	inspect, err := client.ContainerInspect(ctx, create.ID)
-	if err != nil {
-		return err
-	}
-	port, _ := nat.NewPort("tcp", "6379")
-	redisPortRaw := inspect.NetworkSettings.Ports[port][0].HostPort
-
-	redisPort, err := strconv.Atoi(redisPortRaw)
-	if err != nil {
-		return err
-	}
-
-	defer func() {
-		duration, _ := time.ParseDuration("5s")
-		_ = client.ContainerStop(ctx, create.ID, &duration)
-	}()
-
-	callback(redisPort)
-
-	return nil
-}
-
-func withServer(ctx context.Context, config EphemerainConfig, callback func(client *Client, resolver *net.Resolver)) error {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	dnsListener, err := net.ListenPacket("udp", ":0")
-	if err != nil {
-		return err
-	}
-	dnsServerPort := dnsListener.LocalAddr().(*net.UDPAddr).Port
-	config.DNSListener = dnsListener
-
-	httpListener, err := net.Listen("tcp", ":0")
-	if err != nil {
-		return err
-	}
-	httpServerPort := httpListener.Addr().(*net.TCPAddr).Port
-	config.HTTPListener = httpListener
-
-	runServer(ctx, config)
-
-	resolver := &net.Resolver{
-		PreferGo: true,
-		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-			dialer := net.Dialer{}
-			return dialer.DialContext(ctx, network, fmt.Sprintf("127.0.0.1:%d", dnsServerPort))
-		},
-	}
-
-	apiClient, err := NewClient(fmt.Sprintf("http://localhost:%d/v1", httpServerPort))
-	if err != nil {
-		return err
-	}
-
-	callback(apiClient, resolver)
-
-	return nil
-}
-
-func runIntegrationTest(t *testing.T, callback func(context.Context, *Client, *net.Resolver)) {
-	ctx := context.Background()
-	err := withRedisTestServer(ctx, func(redisPort int) {
-		config := EphemerainConfig{
-			JSONLogs:     false,
-			RedisAddress: fmt.Sprintf("localhost:%d", redisPort),
-		}
-		err := withServer(ctx, config, func(apiClient *Client, resolver *net.Resolver) {
-			callback(ctx, apiClient, resolver)
-		})
-		if err != nil {
-			t.Fatalf("Error running test server: %v", err)
-		}
-	})
-	if err != nil {
-		t.Fatalf("Error running redis test server: %v", err)
-	}
-}
-
-func TestE2E(t *testing.T) {
+func TestSetARecord(t *testing.T) {
 	runIntegrationTest(t, func(ctx context.Context, apiClient *Client, resolver *net.Resolver) {
 		expectedHost := []string{"1.2.3.4"}
 		domain := "testingsub.testingdomain.com."
 
 		response, err := apiClient.PutDomain(ctx, Domain(domain), RecordTypeA, PutDomainJSONRequestBody{Value: &expectedHost[0]})
-		if err != nil {
-			t.Errorf("Error setting domain: %v", err)
-		}
-		if http.StatusNoContent != response.StatusCode {
-			t.Errorf("Error setting domain: %v", response)
-		}
+		assert.NoError(t, err, "Error setting domain")
+		assert.Equal(t, http.StatusNoContent, response.StatusCode, "Error setting domain")
 
-		host, err := resolver.LookupHost(context.Background(), domain)
-		if err != nil {
-			t.Errorf("Error looking up host: %s", err)
-		}
+		host, err := resolver.LookupHost(ctx, domain)
+		assert.NoError(t, err, "Error looking up host")
+		assert.Equal(t, expectedHost, host, "Incorrect response")
+	})
+}
 
-		if len(host) != 1 || host[0] != expectedHost[0] {
-			t.Errorf("Incorrect response. Expected %s; got %s", expectedHost, host)
-		}
+func TestMissingARecord(t *testing.T) {
+	runIntegrationTest(t, func(ctx context.Context, apiClient *Client, resolver *net.Resolver) {
+		domain := "testingsub.testingdomain.com."
+
+		host, err := resolver.LookupHost(ctx, domain)
+		assert.Truef(t, err.(*net.DNSError).IsNotFound, "Should be not found")
+		assert.Nil(t, host, "No results should be returned")
+	})
+}
+
+func TestIPSubdomain(t *testing.T) {
+	runIntegrationTest(t, func(ctx context.Context, apiClient *Client, resolver *net.Resolver) {
+		domain := "10.20.30.40.ip.testingdomain.com."
+
+		host, err := resolver.LookupHost(ctx, domain)
+		assert.NoError(t, err, "Error looking up host")
+		assert.Equal(t, []string{"10.20.30.40"}, host, "Incorrect response")
+	})
+}
+
+func TestAPI_PutDomain_400_IfBadRequest(t *testing.T) {
+	runIntegrationTest(t, func(ctx context.Context, apiClient *Client, resolver *net.Resolver) {
+		domain, err := apiClient.PutDomainWithBody(ctx, "foo.com.", RecordTypeA, "application/json", strings.NewReader("not valid json"))
+		assert.NoError(t, err, "Error getting domain")
+		assert.Equal(t, http.StatusBadRequest, domain.StatusCode)
+	})
+}
+
+func TestAPI_GetDomain_404_IfNotFound(t *testing.T) {
+	runIntegrationTest(t, func(ctx context.Context, apiClient *Client, resolver *net.Resolver) {
+		domain, err := apiClient.GetDomain(ctx, "foo.com.", RecordTypeA)
+		assert.NoError(t, err, "Error getting domain")
+		assert.Equal(t, http.StatusNotFound, domain.StatusCode)
+	})
+}
+
+func TestAPI_GetDomain_200_IfFound(t *testing.T) {
+	runIntegrationTest(t, func(ctx context.Context, apiClient *Client, resolver *net.Resolver) {
+		records := "2.4.6.8"
+		putResponse, err := apiClient.PutDomain(ctx, "foo.com.", RecordTypeA, PutDomainJSONRequestBody{Value: &records})
+		assert.NoError(t, err)
+		assert.Equal(t, http.StatusNoContent, putResponse.StatusCode)
+
+		domain, err := apiClient.GetDomain(ctx, "foo.com.", RecordTypeA)
+		assert.NoError(t, err, "Error getting domain")
+		defer domain.Body.Close()
+		assert.Equal(t, http.StatusOK, domain.StatusCode)
+		var response RecordValue
+		all, err := io.ReadAll(domain.Body)
+		assert.NoError(t, err)
+		err = json.Unmarshal(all, &response)
+		assert.NoError(t, err)
+		assert.Equal(t, records, *response.Value)
 	})
 }
