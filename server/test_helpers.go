@@ -139,6 +139,7 @@ func withServer(ctx context.Context, config EphemerainConfig, callback func(clie
 	return nil
 }
 
+// TODO: Make callback take some sort of context object instead of a bunch of params
 func runIntegrationTest(t *testing.T, callback func(context.Context, *Client, *net.Resolver, string)) {
 	ctx := context.Background()
 	err := withRedisTestServer(ctx, func(redisPort int) {
