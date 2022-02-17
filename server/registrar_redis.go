@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"github.com/go-redis/redis/v8"
 	context2 "golang.org/x/net/context"
@@ -29,17 +28,23 @@ func (r RedisRegistrar) GetRecord(ctx context.Context, fqdn Domain, recordType R
 }
 
 func (r RedisRegistrar) DeleteRecord(ctx context.Context, fqdn Domain, recordType RecordType, currentValue string) error {
-	// TODO: This is racy, because there could be a write between the get and delete. To fix this,
-	// probably need to implement a lua method that atomically deletes if value matches
+	// The delete needs to check if the supplied current value matches the actual value in the database. To avoid a race
+	// condition, the check + delete happens in a lua script so that redis performs it atomically.
+	// The lua script is sent for each delete rather than being cached because deletes are relatively rare, so the
+	// performance hit is less painful than the complexities around replication with cached scripts.
+	deleteLuaScript := `
+local expectedCurrentValue = ARGV[1]
+local actualCurrentValue = redis.call('GET', KEYS[1])
+if expectedCurrentValue == actualCurrentValue then
+  redis.call('DEL', KEYS[1])
+  return true
+else
+  return error("attempted to delete with wrong current value")
+end
+`
+
 	key := redisKey(fqdn, recordType)
-	status := r.client.Get(ctx, key)
-	if status.Err() != nil {
-		return status.Err()
-	}
-	if status.Val() != currentValue {
-		return errors.New("attempted to delete record but supplied wrong current value")
-	}
-	return r.client.Del(ctx, key).Err()
+	return r.client.Eval(ctx, deleteLuaScript, []string{key}, currentValue).Err()
 }
 
 func NewRedisRegistrar(redisAddress string) Registrar {
