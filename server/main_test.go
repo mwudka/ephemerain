@@ -2,13 +2,21 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"github.com/go-acme/lego/v4/challenge/dns01"
 	"github.com/go-acme/lego/v4/providers/dns/rfc2136"
+	"github.com/hashicorp/go-version"
+	"github.com/hashicorp/hc-install/product"
+	"github.com/hashicorp/hc-install/releases"
+	"github.com/hashicorp/terraform-exec/tfexec"
 	"github.com/stretchr/testify/assert"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
+	"os"
+	"path"
 	"strings"
 	"testing"
 )
@@ -84,7 +92,7 @@ func TestAPI_GetDomain_200_IfFound(t *testing.T) {
 	})
 }
 
-func TestRFC2136(t *testing.T) {
+func TestLegoRFC2136(t *testing.T) {
 	runIntegrationTest(t, func(ctx context.Context, apiClient *Client, resolver *net.Resolver, nameserver string) {
 		domain := "rfc2136.testing.com"
 		keyAuth := "some-key-auth"
@@ -108,5 +116,38 @@ func TestRFC2136(t *testing.T) {
 		assert.Error(t, err, "Domain name should have been deleted")
 		assert.True(t, err.(*net.DNSError).IsNotFound)
 		assert.Empty(t, txt)
+	})
+}
+
+//go:embed test_data/tfc2135.tf
+var tfc2135Config []byte
+
+func TestTerraformRFC2135(t *testing.T) {
+	runIntegrationTest(t, func(ctx context.Context, apiClient *Client, resolver *net.Resolver, nameserver string) {
+		installer := releases.ExactVersion{Product: product.Terraform, Version: version.Must(version.NewVersion("1.1.6"))}
+		terraformExecPath, err := installer.Install(ctx)
+		assert.NoError(t, err)
+
+		tempDir, err := ioutil.TempDir("", "ephemerain-test")
+		defer os.RemoveAll(tempDir)
+		assert.NoError(t, err)
+
+		err = ioutil.WriteFile(path.Join(tempDir, "tfc2135.tf"), tfc2135Config, 0644)
+		assert.NoError(t, err)
+
+		terraform, err := tfexec.NewTerraform(tempDir, terraformExecPath)
+		assert.NoError(t, err)
+
+		err = terraform.Init(ctx, tfexec.Upgrade(true))
+		assert.NoError(t, err)
+
+		host, port, err := net.SplitHostPort(nameserver)
+		assert.NoError(t, err)
+		err = terraform.Apply(ctx, tfexec.Var("server="+host), tfexec.Var("port="+port))
+		assert.NoError(t, err)
+
+		addrs, err := resolver.LookupHost(ctx, "a.something.example.com")
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"1.2.3.4"}, addrs)
 	})
 }
