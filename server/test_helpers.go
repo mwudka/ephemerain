@@ -11,9 +11,11 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/docker/go-connections/nat"
+	"github.com/hashicorp/go-hclog"
 	"github.com/teris-io/shortid"
 	"net"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 )
@@ -32,6 +34,43 @@ func getContainerPort(ctx context.Context, client *client.Client, containerId st
 	return strconv.Atoi(redisPortRaw)
 }
 
+var pulledImages sync.Map
+
+func ensureImagePresent(ctx context.Context, client *client.Client, image string) error {
+	logger := hclog.FromContext(ctx).With("image", image)
+
+	_, loaded := pulledImages.LoadOrStore(image, true)
+	if loaded {
+		logger.Info("Image already pulled locally")
+		// TODO: If there are multiple tests running in parallel, it's possible a different thread has started pulling
+		// the image but hasn't finished yet. If that's the case, this function will return even though the image
+		// isn't actually present yet.
+	} else {
+		logger.Info("Ensuring image is pulled locally")
+		pull, err := client.ImagePull(ctx, image, types.ImagePullOptions{})
+		if err != nil {
+			return err
+		}
+		scanner := bufio.NewScanner(pull)
+		defer pull.Close()
+		for scanner.Scan() {
+			if scanner.Err() != nil {
+				return err
+			}
+			var message jsonmessage.JSONMessage
+			if err := json.Unmarshal(scanner.Bytes(), &message); err != nil {
+				return err
+			}
+			logger.Info(message.Status)
+			if message.ID != "" {
+				logger.Info(message.ID)
+			}
+		}
+	}
+
+	return nil
+}
+
 func withDockerContainer(ctx context.Context, image string, portSpec string, binds []string, callback func(context.Context, *client.Client, string) error) error {
 	client, err := client.NewClientWithOpts(client.FromEnv)
 	if err != nil {
@@ -39,25 +78,9 @@ func withDockerContainer(ctx context.Context, image string, portSpec string, bin
 	}
 	defer client.Close()
 
-	pull, err := client.ImagePull(ctx, image, types.ImagePullOptions{})
+	err = ensureImagePresent(ctx, client, image)
 	if err != nil {
 		return err
-	}
-	scanner := bufio.NewScanner(pull)
-	defer pull.Close()
-	for scanner.Scan() {
-		if scanner.Err() != nil {
-			return err
-		}
-		var message jsonmessage.JSONMessage
-		if err := json.Unmarshal(scanner.Bytes(), &message); err != nil {
-			return err
-		}
-		fmt.Print(message.Status)
-		if message.ID != "" {
-			fmt.Print(message.ID)
-		}
-		fmt.Println()
 	}
 
 	_, m, _ := nat.ParsePortSpecs([]string{portSpec})
