@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"github.com/hashicorp/go-hclog"
+	"github.com/wpalmer/gozone"
 	"net/http"
 )
 
@@ -48,4 +49,35 @@ func (d DomainAPIImpl) PutDomain(w http.ResponseWriter, r *http.Request, domain 
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// TODO: Maybe this should be scoped to a domain?
+func (d DomainAPIImpl) PostZone(w http.ResponseWriter, r *http.Request) {
+	logger := hclog.FromContext(r.Context())
+	var record gozone.Record
+	scanner := gozone.NewScanner(r.Body)
+	defer r.Body.Close()
+	for {
+		err := scanner.Next(&record)
+		if err == nil {
+			logger.Info("Parsed zone record", "record", record)
+
+			if record.Type == gozone.RecordType_A {
+				err := d.registrar.SetRecord(r.Context(), Domain(record.DomainName), RecordTypeA, record.Data[0])
+				if err != nil {
+					logger.Warn("Error setting record", "error", err)
+				}
+			}
+
+		} else if err.Error() == "EOF" {
+			logger.Info("Finishing processing uploaded zone")
+			w.WriteHeader(http.StatusNoContent)
+			return
+		} else {
+			logger.Info("Attempted to post invalid zone", "error", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+	}
 }

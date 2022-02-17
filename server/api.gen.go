@@ -124,6 +124,9 @@ type ClientInterface interface {
 	PutDomainWithBody(ctx context.Context, domain Domain, recordType RecordType, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	PutDomain(ctx context.Context, domain Domain, recordType RecordType, body PutDomainJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostZone request with any body
+	PostZoneWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) GetDomain(ctx context.Context, domain Domain, recordType RecordType, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -152,6 +155,18 @@ func (c *Client) PutDomainWithBody(ctx context.Context, domain Domain, recordTyp
 
 func (c *Client) PutDomain(ctx context.Context, domain Domain, recordType RecordType, body PutDomainJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPutDomainRequest(c.Server, domain, recordType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostZoneWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostZoneRequestWithBody(c.Server, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -257,6 +272,35 @@ func NewPutDomainRequestWithBody(server string, domain Domain, recordType Record
 	return req, nil
 }
 
+// NewPostZoneRequestWithBody generates requests for PostZone with any type of body
+func NewPostZoneRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/zone")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -307,6 +351,9 @@ type ClientWithResponsesInterface interface {
 	PutDomainWithBodyWithResponse(ctx context.Context, domain Domain, recordType RecordType, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutDomainResponse, error)
 
 	PutDomainWithResponse(ctx context.Context, domain Domain, recordType RecordType, body PutDomainJSONRequestBody, reqEditors ...RequestEditorFn) (*PutDomainResponse, error)
+
+	// PostZone request with any body
+	PostZoneWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostZoneResponse, error)
 }
 
 type GetDomainResponse struct {
@@ -352,6 +399,27 @@ func (r PutDomainResponse) StatusCode() int {
 	return 0
 }
 
+type PostZoneResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// Status returns HTTPResponse.Status
+func (r PostZoneResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostZoneResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 // GetDomainWithResponse request returning *GetDomainResponse
 func (c *ClientWithResponses) GetDomainWithResponse(ctx context.Context, domain Domain, recordType RecordType, reqEditors ...RequestEditorFn) (*GetDomainResponse, error) {
 	rsp, err := c.GetDomain(ctx, domain, recordType, reqEditors...)
@@ -376,6 +444,15 @@ func (c *ClientWithResponses) PutDomainWithResponse(ctx context.Context, domain 
 		return nil, err
 	}
 	return ParsePutDomainResponse(rsp)
+}
+
+// PostZoneWithBodyWithResponse request with arbitrary body returning *PostZoneResponse
+func (c *ClientWithResponses) PostZoneWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostZoneResponse, error) {
+	rsp, err := c.PostZoneWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostZoneResponse(rsp)
 }
 
 // ParseGetDomainResponse parses an HTTP response from a GetDomainWithResponse call
@@ -420,6 +497,22 @@ func ParsePutDomainResponse(rsp *http.Response) (*PutDomainResponse, error) {
 	return response, nil
 }
 
+// ParsePostZoneResponse parses an HTTP response from a PostZoneWithResponse call
+func ParsePostZoneResponse(rsp *http.Response) (*PostZoneResponse, error) {
+	bodyBytes, err := ioutil.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostZoneResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 
@@ -428,6 +521,9 @@ type ServerInterface interface {
 
 	// (PUT /domains/{domain}/record/{recordType})
 	PutDomain(w http.ResponseWriter, r *http.Request, domain Domain, recordType RecordType)
+
+	// (POST /zone)
+	PostZone(w http.ResponseWriter, r *http.Request)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -500,6 +596,21 @@ func (siw *ServerInterfaceWrapper) PutDomain(w http.ResponseWriter, r *http.Requ
 
 	var handler = func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PutDomain(w, r, domain, recordType)
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler(w, r.WithContext(ctx))
+}
+
+// PostZone operation middleware
+func (siw *ServerInterfaceWrapper) PostZone(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var handler = func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostZone(w, r)
 	}
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -627,6 +738,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/domains/{domain}/record/{recordType}", wrapper.PutDomain)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/zone", wrapper.PostZone)
 	})
 
 	return r
