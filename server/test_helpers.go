@@ -95,6 +95,17 @@ func withRedisTestServer(ctx context.Context, callback func(int)) error {
 	return nil
 }
 
+func buildLocalhostResolver(port int) *net.Resolver {
+	nameserver := fmt.Sprintf("127.0.0.1:%d", port)
+	return &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+			dialer := net.Dialer{}
+			return dialer.DialContext(ctx, network, nameserver)
+		},
+	}
+}
+
 func withServer(ctx context.Context, config EphemerainConfig, callback func(client *Client, resolver *net.Resolver, nameserver string)) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -116,13 +127,7 @@ func withServer(ctx context.Context, config EphemerainConfig, callback func(clie
 	runServer(ctx, config)
 
 	nameserver := fmt.Sprintf("127.0.0.1:%d", dnsServerPort)
-	resolver := &net.Resolver{
-		PreferGo: true,
-		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-			dialer := net.Dialer{}
-			return dialer.DialContext(ctx, network, nameserver)
-		},
-	}
+	resolver := buildLocalhostResolver(dnsServerPort)
 
 	apiClient, err := NewClient(fmt.Sprintf("http://localhost:%d/v1", httpServerPort))
 	if err != nil {
