@@ -18,14 +18,27 @@ import (
 	"time"
 )
 
-func withRedisTestServer(ctx context.Context, callback func(int)) error {
+func getContainerPort(ctx context.Context, client *client.Client, containerId string, protocol string, port string) (int, error) {
+	inspect, err := client.ContainerInspect(ctx, containerId)
+	if err != nil {
+		return 0, err
+	}
+	parsedPort, err := nat.NewPort(protocol, port)
+	if err != nil {
+		return 0, err
+	}
+	redisPortRaw := inspect.NetworkSettings.Ports[parsedPort][0].HostPort
+
+	return strconv.Atoi(redisPortRaw)
+}
+
+func withDockerContainer(ctx context.Context, image string, portSpec string, binds []string, callback func(context.Context, *client.Client, string) error) error {
 	client, err := client.NewClientWithOpts(client.FromEnv)
 	if err != nil {
 		return err
 	}
 	defer client.Close()
 
-	image := "redis:6.2-alpine"
 	pull, err := client.ImagePull(ctx, image, types.ImagePullOptions{})
 	if err != nil {
 		return err
@@ -47,12 +60,12 @@ func withRedisTestServer(ctx context.Context, callback func(int)) error {
 		fmt.Println()
 	}
 
-	_, m, _ := nat.ParsePortSpecs([]string{"0:6379"})
+	_, m, _ := nat.ParsePortSpecs([]string{portSpec})
 	shortId, err := shortid.Generate()
 	if err != nil {
 		return err
 	}
-	containerName := "domaintest_redis_" + shortId
+	containerName := "domaintest_" + shortId
 	create, err := client.ContainerCreate(context.Background(), &container.Config{
 		AttachStdin:  true,
 		AttachStdout: true,
@@ -63,6 +76,7 @@ func withRedisTestServer(ctx context.Context, callback func(int)) error {
 	}, &container.HostConfig{
 		PortBindings: m,
 		AutoRemove:   true,
+		Binds:        binds,
 	}, &network.NetworkingConfig{}, nil, containerName)
 	if err != nil {
 		return err
@@ -73,26 +87,25 @@ func withRedisTestServer(ctx context.Context, callback func(int)) error {
 		return err
 	}
 
-	inspect, err := client.ContainerInspect(ctx, create.ID)
-	if err != nil {
-		return err
-	}
-	port, _ := nat.NewPort("tcp", "6379")
-	redisPortRaw := inspect.NetworkSettings.Ports[port][0].HostPort
-
-	redisPort, err := strconv.Atoi(redisPortRaw)
-	if err != nil {
-		return err
-	}
-
 	defer func() {
 		duration, _ := time.ParseDuration("5s")
 		_ = client.ContainerStop(ctx, create.ID, &duration)
 	}()
 
-	callback(redisPort)
+	return callback(ctx, client, create.ID)
+}
 
-	return nil
+func withRedisTestServer(ctx context.Context, callback func(int)) error {
+	return withDockerContainer(ctx, "redis:6.2-alpine", "0:6379", nil, func(ctx context.Context, client *client.Client, containerId string) error {
+		redisPort, err := getContainerPort(ctx, client, containerId, "tcp", "6379")
+		if err != nil {
+			return err
+		}
+
+		callback(redisPort)
+
+		return nil
+	})
 }
 
 func buildLocalhostResolver(port int) *net.Resolver {
@@ -139,7 +152,6 @@ func withServer(ctx context.Context, config EphemerainConfig, callback func(clie
 	return nil
 }
 
-// TODO: Make callback take some sort of context object instead of a bunch of params
 func runIntegrationTest(t *testing.T, callback func(context.Context, *Client, *net.Resolver, string)) {
 	ctx := context.Background()
 	err := withRedisTestServer(ctx, func(redisPort int) {
