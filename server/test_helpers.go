@@ -11,6 +11,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/docker/go-connections/nat"
+	"github.com/teris-io/shortid"
 	"net"
 	"strconv"
 	"testing"
@@ -47,6 +48,11 @@ func withRedisTestServer(ctx context.Context, callback func(int)) error {
 	}
 
 	_, m, _ := nat.ParsePortSpecs([]string{"0:6379"})
+	shortId, err := shortid.Generate()
+	if err != nil {
+		return err
+	}
+	containerName := "domaintest_redis_" + shortId
 	create, err := client.ContainerCreate(context.Background(), &container.Config{
 		AttachStdin:  true,
 		AttachStdout: true,
@@ -57,7 +63,7 @@ func withRedisTestServer(ctx context.Context, callback func(int)) error {
 	}, &container.HostConfig{
 		PortBindings: m,
 		AutoRemove:   true,
-	}, &network.NetworkingConfig{}, nil, "testing")
+	}, &network.NetworkingConfig{}, nil, containerName)
 	if err != nil {
 		return err
 	}
