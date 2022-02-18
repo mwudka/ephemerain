@@ -50,7 +50,7 @@ jobs:
       - name: Terraform Select Workspace
         if: ${{ github.ref_name == 'main' }}
         working-directory: ./terraform
-        run: terraform workspace select ephemerain-dev
+        run: terraform workspace select ephemerain-prod
       - name: Terraform Apply
         if: ${{ github.ref_name == 'main' }}
         working-directory: ./terraform
