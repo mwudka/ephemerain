@@ -80,7 +80,7 @@ func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 			m.Rcode = dns.RcodeSuccess
 			rr := &dns.NS{
 				Hdr: dns.RR_Header{Name: string(dom), Rrtype: dns.TypeNS, Class: dns.ClassINET, Ttl: 60},
-				Ns:  "ns1.ephemerain.com.",
+				Ns:  "ns1.bam0.com.",
 			}
 			m.Answer = append(m.Answer, rr)
 		case dns.TypeSOA:

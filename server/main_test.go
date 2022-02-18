@@ -94,14 +94,14 @@ func TestAPI_GetDomain_200_IfFound(t *testing.T) {
 
 func TestDNS_ReturnsHardcodedNS(t *testing.T) {
 	runIntegrationTest(t, func(ctx context.Context, apiClient *Client, resolver *net.Resolver, _ string) {
-		ns, err := resolver.LookupNS(ctx, "ephemerain.com")
+		ns, err := resolver.LookupNS(ctx, "bam0.com")
 		assert.NoError(t, err)
 
 		hosts := make([]string, len(ns))
 		for idx, host := range ns {
 			hosts[idx] = host.Host
 		}
-		assert.Equal(t, []string{"ns1.ephemerain.com."}, hosts)
+		assert.Equal(t, []string{"ns1.bam0.com."}, hosts)
 	})
 }
 
