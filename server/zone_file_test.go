@@ -74,6 +74,8 @@ func TestMatchesBind(t *testing.T) {
 		assert.Equal(t, http.StatusNoContent, response.StatusCode)
 
 		err = withBind9TestServer(ctx, func(bindResolver *net.Resolver) {
+			// TODO: Once the dns query handler implements RFC1034, this test should systematically compare
+			// bind and the dns server for all combinations of domain name from the test zone file and record types
 			for _, domain := range []string{"home.zonetransfer.me", "invalid.zonetransfer.me", "zonetransfer.me"} {
 				expectedHost, expectedErr := bindResolver.LookupHost(ctx, domain)
 				actualHost, actualErr := resolver.LookupHost(ctx, domain)

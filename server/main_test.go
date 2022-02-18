@@ -92,6 +92,19 @@ func TestAPI_GetDomain_200_IfFound(t *testing.T) {
 	})
 }
 
+func TestDNS_ReturnsHardcodedNS(t *testing.T) {
+	runIntegrationTest(t, func(ctx context.Context, apiClient *Client, resolver *net.Resolver, _ string) {
+		ns, err := resolver.LookupNS(ctx, "ephemerain.com")
+		assert.NoError(t, err)
+
+		hosts := make([]string, len(ns))
+		for idx, host := range ns {
+			hosts[idx] = host.Host
+		}
+		assert.Equal(t, []string{"ns1.ephemerain.com."}, hosts)
+	})
+}
+
 func TestLegoRFC2136(t *testing.T) {
 	runIntegrationTest(t, func(ctx context.Context, apiClient *Client, resolver *net.Resolver, nameserver string) {
 		domain := "rfc2136.testing.com"
