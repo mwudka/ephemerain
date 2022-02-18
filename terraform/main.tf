@@ -150,10 +150,6 @@ provider "aws" {
   region = "us-west-2"
 }
 
-data "aws_route53_zone" "ephemerain" {
-  name         = "bam0.com."
-}
-
 locals {
   ssh-command = "gcloud compute ssh --zone '${var.zone}' '${google_compute_instance.production.name}'  --project '${var.gcp-project}'"
   dns-server-ips = [local.production-ip] 
