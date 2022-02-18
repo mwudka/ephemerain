@@ -150,13 +150,13 @@ func main() {
 	}
 
 	runServer(ctx, EphemerainConfig{
-		JSONLogs: strings.ToLower(os.Getenv("LOG_FORMAT")) == "json",
+		JSONLogs:     strings.ToLower(os.Getenv("LOG_FORMAT")) == "json",
 		RedisAddress: redisAddress,
-		DNSListener: dnsListener,
+		DNSListener:  dnsListener,
 		HTTPListener: httpListener,
 	})
 
-	sig := make(chan os.Signal)
+	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	s := <-sig
 	hclog.L().Info("Received signal; stopping", "signal", s.String())
