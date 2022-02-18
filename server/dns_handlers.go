@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"github.com/hashicorp/go-hclog"
 	"github.com/miekg/dns"
 	"net"
@@ -31,12 +32,19 @@ func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 					err = registrar.SetRecord(ctx, fqdn, RecordTypeCNAME, target)
 				case dns.TypeTXT:
 					// TODO: Support multiple values
-					// TODO: Handle deletion
 					txt := ns.(*dns.TXT).Txt
-					if len(txt) > 0 {
+					if len(txt) == 0 {
+						err = errors.New("Missing txt value")
+					} else {
 						values := txt[0]
-						err = registrar.SetRecord(ctx, fqdn, RecordTypeTXT, values)
+						switch ns.Header().Class {
+						case dns.ClassINET:
+							err = registrar.SetRecord(ctx, fqdn, RecordTypeTXT, values)
+						case dns.ClassNONE:
+							err = registrar.DeleteRecord(ctx, fqdn, RecordTypeTXT, values)
+						}
 					}
+
 				}
 			}
 
@@ -64,6 +72,8 @@ func handleIPQuery(registrar Registrar) func(w dns.ResponseWriter, r *dns.Msg) {
 		dom := Domain(r.Question[0].Name)
 
 		switch r.Question[0].Qtype {
+		default:
+			m.Rcode = dns.RcodeNameError
 		case dns.TypeNS:
 			// TODO: Should this, like, recurse or something? Letsencrypt always checks for NS records on random
 			// subdomains

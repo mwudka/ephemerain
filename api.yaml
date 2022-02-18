@@ -29,6 +29,18 @@ components:
       schema:
         $ref: '#/components/schemas/RecordType'
 paths:
+  /zone:
+    post:
+      operationId: postZone
+      requestBody:
+        required: true
+        content:
+          text/plain:
+            schema:
+              type: string
+      responses:
+        '201':
+          description: 'Zone records created'
   /domains/{domain}/record/{recordType}:
     get:
       operationId: getDomain

@@ -27,6 +27,26 @@ func (r RedisRegistrar) GetRecord(ctx context.Context, fqdn Domain, recordType R
 	return status.Val(), status.Err()
 }
 
+func (r RedisRegistrar) DeleteRecord(ctx context.Context, fqdn Domain, recordType RecordType, currentValue string) error {
+	// The delete needs to check if the supplied current value matches the actual value in the database. To avoid a race
+	// condition, the check + delete happens in a lua script so that redis performs it atomically.
+	// The lua script is sent for each delete rather than being cached because deletes are relatively rare, so the
+	// performance hit is less painful than the complexities around replication with cached scripts.
+	deleteLuaScript := `
+local expectedCurrentValue = ARGV[1]
+local actualCurrentValue = redis.call('GET', KEYS[1])
+if expectedCurrentValue == actualCurrentValue then
+  redis.call('DEL', KEYS[1])
+  return true
+else
+  return error("attempted to delete with wrong current value")
+end
+`
+
+	key := redisKey(fqdn, recordType)
+	return r.client.Eval(ctx, deleteLuaScript, []string{key}, currentValue).Err()
+}
+
 func NewRedisRegistrar(redisAddress string) Registrar {
 	return RedisRegistrar{
 		client: redis.NewClient(&redis.Options{

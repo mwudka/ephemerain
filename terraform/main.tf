@@ -151,62 +151,8 @@ provider "aws" {
 }
 
 data "aws_route53_zone" "ephemerain" {
-  name         = "ephemerain.com."
+  name         = "bam0.com."
 }
-
-data "aws_route53_zone" "ephemerain-api" {
-  name         = "ephemerain-api.com."
-}
-
-resource "aws_route53_record" "nsN" {
-  count = 4
-  zone_id = data.aws_route53_zone.ephemerain-api.zone_id
-  name = "ns${count.index+1}.ephemerain-api.com"
-  type = "A"
-  ttl = "60"
-  records = [local.dns-server-ips[count.index % length(local.dns-server-ips)]]
-}
-
-
-// TODO: Remove this after updating the nameservers on ephemerain.com to point to nsN.ephemerain-api.com
-resource "aws_route53_record" "nsN-legacy" {
-  count = 4
-  zone_id = data.aws_route53_zone.ephemerain.zone_id
-  name = "ns${count.index+1}.ephemerain.com"
-  type = "A"
-  ttl = "60"
-  records = [local.dns-server-ips[count.index % length(local.dns-server-ips)]]
-}
-
-
-resource "aws_route53_record" "root" {
-  zone_id = data.aws_route53_zone.ephemerain-api.zone_id
-  name = "ephemerain.com"
-  type = "A"
-  ttl = "60"
-  records = local.dns-server-ips
-}
-
-
-resource "aws_route53_record" "root-api" {
-  zone_id = data.aws_route53_zone.ephemerain.zone_id
-  name = "ephemerain-api.com"
-  type = "A"
-  ttl = "60"
-  records = local.dns-server-ips
-}
-
-
-// TODO: For this to work, we need to import the NS records from route53. Unfortunately,
-// importing when using TFC is a huge pain because it can only be done locally. Maybe
-// local-exec would work as a hack?
-# resource "aws_route53_record" "dns-server-ns-record" {
-#   zone_id = data.aws_route53_zone.ephemerain.zone_id
-#   name = "ephemerain.com"
-#   type = "NS"
-#   records = aws_route53_record.nsN[*].name
-#   ttl = "60"
-# }
 
 locals {
   ssh-command = "gcloud compute ssh --zone '${var.zone}' '${google_compute_instance.production.name}'  --project '${var.gcp-project}'"
